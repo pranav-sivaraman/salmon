@@ -31,3 +31,5 @@
 *~
 external
 build
+salmon
+tests/unitTests
