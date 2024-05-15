@@ -29,3 +29,5 @@
 
 # Emacs save files
 *~
+external
+build
