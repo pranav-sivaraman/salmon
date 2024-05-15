@@ -18,8 +18,6 @@ find_library(HTSCODEC_LIBRARY NAMES htscodecs libhtscodecs
 
 if(STADEN_INCLUDE_DIR)
   set(_version_regex "^#define[ \t]+PACKAGE_VERSION[ \t]+\"([^\"]+)\".*")
-  file(STRINGS "${STADEN_INCLUDE_DIR}/io_lib/io_lib_config.h"
-    STADEN_VERSION REGEX "${_version_regex}")
   string(REGEX REPLACE "${_version_regex}" "\\1"
     STADEN_VERSION "${STADEN_VERSION}")
   unset(_version_regex)
@@ -29,7 +27,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(libstadenio DEFAULT_MSG
                                   STADEN_LIBRARY 
                                   STADEN_INCLUDE_DIR
-                                  STADEN_VERSION)
+                                  )
 
 if (LIBSTADENIO_FOUND)
   message(STATUS "Staden IOLib found (include: ${STADEN_INCLUDE_DIR})")
