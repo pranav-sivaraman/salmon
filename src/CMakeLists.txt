@@ -249,6 +249,7 @@ target_link_libraries(salmon
     ${BZIP2_LIBRARIES}
     ${LIBSALMON_LINKER_FLAGS}
     ${NON_APPLECLANG_LIBS}
+    pybind11::embed
     ksw2pp
     alevin_core
     ${ASAN_LIB}
