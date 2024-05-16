@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
-file_path = "salmon-analysis-main/ground_truth/1.sim.genes.results"
+file_path = "/Users/pranav/Documents/College/CMSC701/salmon-analysis/ground_truth/2.sim.genes.results"
 ground_truth = pd.read_csv(file_path, delimiter="\t")[["TPM"]].to_numpy()
 
 
@@ -24,10 +24,12 @@ def MARD(weights, em_iter, vbem_iter):
 
 
 def minimization(em_iter, vbem_iter, initial_guess=[0.5, 0.5], MARD=MARD):
+    print("Starting Minimization")
     result = minimize(
         MARD,
         x0=initial_guess,
         args=(em_iter, vbem_iter, ground_truth),
         bounds=[(0, 1), (0, 1)],
     )
+    print("Ending Minimization")
     return result.x
