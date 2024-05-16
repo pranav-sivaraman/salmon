@@ -12,6 +12,7 @@
 #include "oneapi/tbb/task_arena.h"
 
 #include <pybind11/embed.h>
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -767,6 +768,8 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
   // With atomics
   VecType alphas(transcripts.size());
   VecType alphasPrime(transcripts.size());
+  VecType alphas_prime_vbem(transcripts.size());
+  VecType alphas_prime_em(transcripts.size());
   VecType expTheta(transcripts.size());
 
   Eigen::VectorXd effLens(transcripts.size());
@@ -812,7 +815,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
   }
 
   // If we use VBEM, we'll need the prior parameters
-  std::vector<double> priorAlphas = populatePriorAlphas_(
+  std::vector<double> prior_alphas_vbem = populatePriorAlphas_(
+      transcripts, effLens, priorValue, perTranscriptPrior);
+  std::vector<double> prior_alphas_em = populatePriorAlphas_(
       transcripts, effLens, priorValue, perTranscriptPrior);
 
   // Based on the number of observed reads, use
@@ -930,10 +935,8 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
       effLens = salmon::utils::updateEffectiveLengths(
           arena, sopt, readExp, effLens, alphas, available, true);
       // if we're doing the VB optimization, update the priors
-      if (useVBEM) {
-        priorAlphas = populatePriorAlphas_(transcripts, effLens, priorValue,
-                                           perTranscriptPrior);
-      }
+      prior_alphas_vbem = populatePriorAlphas_(transcripts, effLens, priorValue,
+                                               perTranscriptPrior);
 
       // Check for strangeness with the lengths.
       for (int32_t i = 0; i < effLens.size(); ++i) {
@@ -952,12 +955,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
       }
     }
 
-    if (useVBEM) {
-      VBEMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime, expTheta);
-    } else {
-
-      EMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime);
-    }
+    VBEMUpdate_(arena, eqVec, prior_alphas_vbem, alphas, alphas_prime_em,
+                expTheta);
+    EMUpdate_(arena, eqVec, prior_alphas_em, alphas, alphas_prime_vbem);
 
     converged = true;
     maxRelDiff = -std::numeric_limits<double>::max();
