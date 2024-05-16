@@ -121,6 +121,8 @@ include(CheckIPOSupported)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(pybind11 CONFIG REQUIRED)
+
 set(ICU_LIBS "")
 set(ICU_INC_DIRS "")
 
