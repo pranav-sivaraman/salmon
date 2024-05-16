@@ -28,8 +28,10 @@
 *.app
 
 # Emacs save files
+*.json
 *~
-external
-build
-salmon
-tests/unitTests
+*external
+*build
+*salmon
+*tests/unitTests
+.cache/clangd/index
