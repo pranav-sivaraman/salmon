@@ -198,7 +198,7 @@ void EMUpdate_(oneapi::tbb::task_arena& arena, EQVecT& eqVec,
           for (auto eqID : boost::irange(range.begin(), range.end())) {
             auto& kv = eqVec[eqID];
 
-            double count = kv.second.count * weights[0]; // EM Weights
+            uint64_t count = kv.second.count;
             // for each transcript in this class
             const TranscriptGroup& tgroup = kv.first;
             if (tgroup.valid) {
@@ -289,7 +289,7 @@ void VBEMUpdate_(oneapi::tbb::task_arena& arena, EQVecT& eqVec,
           for (auto eqID : boost::irange(range.begin(), range.end())) {
             auto& kv = eqVec[eqID];
 
-            double count = kv.second.count * weights[1]; // VBEM Weights
+            uint64_t count = kv.second.count;
             // for each transcript in this class
             const TranscriptGroup& tgroup = kv.first;
             if (tgroup.valid) {
@@ -979,12 +979,12 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
         }
       }
 
-      jointLog->info("VBME Update {}", itNum);
-      VBEMUpdate_(arena, eqVec, prior_alphas_vbem, alphas, alphas_prime_em,
-                  expTheta);
-
       jointLog->info("EM Update {}", itNum);
-      EMUpdate_(arena, eqVec, prior_alphas_em, alphas, alphas_prime_vbem);
+      EMUpdate_(arena, eqVec, prior_alphas_em, alphas, alphas_prime_em);
+
+      jointLog->info("VBME Update {}", itNum);
+      VBEMUpdate_(arena, eqVec, prior_alphas_vbem, alphas, alphas_prime_vbem,
+                  expTheta);
 
       for (std::size_t i = 0; i < transcripts.size(); i++) {
         copy_vbem[i] = alphas_prime_vbem[i];
@@ -1007,7 +1007,7 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
       maxRelDiff = -std::numeric_limits<double>::max();
       for (size_t i = 0; i < transcripts.size(); ++i) {
         alphasPrime[i] =
-            weights[0] * alphas_prime_em[0] + weights[1] * alphas_prime_vbem[1];
+            weights[0] * alphas_prime_em[i] + weights[1] * alphas_prime_vbem[i];
         if (alphasPrime[i] > alphaCheckCutoff) {
           double relDiff =
               std::abs(alphas[i] - alphasPrime[i]) / alphasPrime[i];
