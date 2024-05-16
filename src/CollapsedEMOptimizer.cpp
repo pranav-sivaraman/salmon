@@ -11,6 +11,11 @@
 #include "oneapi/tbb/partitioner.h"
 #include "oneapi/tbb/task_arena.h"
 
+#include <pybind11/embed.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
 // #include "fastapprox.h"
 #include <boost/math/special_functions/digamma.hpp>
 
@@ -33,6 +38,8 @@
 #include "UnpairedRead.hpp"
 
 using BlockedIndexRange = oneapi::tbb::blocked_range<size_t>;
+
+namespace py = pybind11;
 
 // intelligently chosen value originally adopted from
 // https://github.com/pachterlab/kallisto/blob/master/src/EMAlgorithm.h#L18
@@ -736,6 +743,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
 
   oneapi::tbb::task_arena arena(sopt.numThreads);
 
+  py::scoped_interpreter guard{};
+  py::module minimize_module = py::module::import("minimize");
+
   std::vector<Transcript>& transcripts = readExp.transcripts();
   std::vector<bool> available(transcripts.size(), false);
 
@@ -753,6 +763,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
   VecType alphas(transcripts.size());
   VecType alphasPrime(transcripts.size());
   VecType expTheta(transcripts.size());
+
+  VecType alphas_prime_vbem(transcripts.size());
+  VecType alphas_prime_em(transcripts.size());
 
   Eigen::VectorXd effLens(transcripts.size());
 
@@ -797,8 +810,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
   }
 
   // If we use VBEM, we'll need the prior parameters
-  std::vector<double> priorAlphas = populatePriorAlphas_(
+  std::vector<double> prior_alpha_vbem = populatePriorAlphas_(
       transcripts, effLens, priorValue, perTranscriptPrior);
+  std::vector<double> prior_alpha_em(prior_alpha_vbem);
 
   // Based on the number of observed reads, use
   // a linear combination of the online estimates
@@ -904,8 +918,9 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
   double alphaSum = 0.0;
   */
 
-  jointLog->info("Alphas Size {}", alphasPrime.size());
-  std::ofstream out("intermediate_alphas.bin", std::ios::binary);
+  std::vector<double> copy_vbem(transcripts.size());
+  std::vector<double> copy_em(transcripts.size());
+
   while (itNum < minIter or (itNum < maxIter and !converged) or needBias) {
     if (needBias and (itNum > targetIt or converged)) {
 
@@ -916,8 +931,8 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
           arena, sopt, readExp, effLens, alphas, available, true);
       // if we're doing the VB optimization, update the priors
       if (useVBEM) {
-        priorAlphas = populatePriorAlphas_(transcripts, effLens, priorValue,
-                                           perTranscriptPrior);
+        prior_alpha_vbem = populatePriorAlphas_(transcripts, effLens,
+                                                priorValue, perTranscriptPrior);
       }
 
       // Check for strangeness with the lengths.
@@ -937,23 +952,28 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
       }
     }
 
-    if (useVBEM) {
-      VBEMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime, expTheta);
-    } else {
-      /*
-      if (itNum > 0 and (itNum % 250 == 0)) {
-        for (size_t i = 0; i < transcripts.size(); ++i) {
-          if (alphas[i] < 1.0) { alphas[i] = 0.0; }
-        }
-      }
-      */
+    VBEMUpdate_(arena, eqVec, prior_alpha_vbem, alphas, alphas_prime_vbem,
+                expTheta);
 
-      EMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime);
+    EMUpdate_(arena, eqVec, prior_alpha_em, alphas, alphas_prime_em);
+
+    for (std::size_t i = 0; i < transcripts.size(); i++) {
+      copy_vbem[i] = alphas_prime_vbem[i];
+      copy_em[i] = alphas_prime_em[i];
     }
+
+    py::array_t<double> vbem_input = py::cast(copy_vbem);
+    py::array_t<double> em_input = py::cast(copy_em);
+
+    std::vector<double> weights = py::cast<std::vector<double>>(
+        minimize_module.attr("minimization")(em_input, vbem_input));
 
     converged = true;
     maxRelDiff = -std::numeric_limits<double>::max();
     for (size_t i = 0; i < transcripts.size(); ++i) {
+      alphasPrime[i] =
+          weights[0] * alphas_prime_em[i] + weights[1] * alphas_prime_vbem[i];
+      alphasPrime[i] = alphasPrime[i] / (weights[0] + weights[1]);
       if (alphasPrime[i] > alphaCheckCutoff) {
         double relDiff = std::abs(alphas[i] - alphasPrime[i]) / alphasPrime[i];
         maxRelDiff = (relDiff > maxRelDiff) ? relDiff : maxRelDiff;
@@ -994,17 +1014,8 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
       jointLog->info("iteration = {:n} | max rel diff. = {}", itNum,
                      maxRelDiff);
     }
-
-#define NUM_OUT 1000
-
-    out.write(reinterpret_cast<const char*>(alphas.data()),
-              sizeof(std::atomic<double>) * NUM_OUT);
-
     ++itNum;
   }
-
-  out.close();
-
   /* -- v0.8.x
   if (alphaSum < ::minWeight) {
     jointLog->error("Total alpha weight was too small! "
