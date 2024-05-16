@@ -11,6 +11,10 @@
 #include "oneapi/tbb/partitioner.h"
 #include "oneapi/tbb/task_arena.h"
 
+#include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
 // #include "fastapprox.h"
 #include <boost/math/special_functions/digamma.hpp>
 
@@ -33,6 +37,7 @@
 #include "UnpairedRead.hpp"
 
 using BlockedIndexRange = oneapi::tbb::blocked_range<size_t>;
+namespace py = pybind11;
 
 // intelligently chosen value originally adopted from
 // https://github.com/pachterlab/kallisto/blob/master/src/EMAlgorithm.h#L18
@@ -734,6 +739,16 @@ template <typename ExpT>
 bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
                                     double relDiffTolerance, uint32_t maxIter) {
 
+  py::scoped_interpreter guard{};
+
+  /*
+   * Get Ground Truth and calculate MARD Metric
+   * Calculate Weights
+   * Apply Weights to VBEM and EM
+   * Add early stopping condition (Just terminate CTRL_C)
+   * Steal from other group option to do both
+   */
+
   oneapi::tbb::task_arena arena(sopt.numThreads);
 
   std::vector<Transcript>& transcripts = readExp.transcripts();
@@ -940,13 +955,6 @@ bool CollapsedEMOptimizer::optimize(ExpT& readExp, SalmonOpts& sopt,
     if (useVBEM) {
       VBEMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime, expTheta);
     } else {
-      /*
-      if (itNum > 0 and (itNum % 250 == 0)) {
-        for (size_t i = 0; i < transcripts.size(); ++i) {
-          if (alphas[i] < 1.0) { alphas[i] = 0.0; }
-        }
-      }
-      */
 
       EMUpdate_(arena, eqVec, priorAlphas, alphas, alphasPrime);
     }
